@@ -1,3 +1,4 @@
+#define DEBUG
 /*
  * Copyright 2006-2012 Freescale Semiconductor, Inc. All Rights Reserved.
  */
@@ -23,13 +24,14 @@
 #include <linux/mm.h>
 #include <linux/interrupt.h>
 #include <linux/ioport.h>
+#include <linux/module.h>
 #include <linux/stat.h>
 #include <linux/platform_device.h>
 #include <linux/kdev_t.h>
 #include <linux/dma-mapping.h>
-#include <linux/iram_alloc.h>
 #include <linux/wait.h>
 #include <linux/list.h>
+#include <linux/of.h>
 #include <linux/clk.h>
 #include <linux/delay.h>
 #include <linux/fsl_devices.h>
@@ -42,14 +44,12 @@
 #include <linux/page-flags.h>
 #include <linux/mm_types.h>
 #include <linux/types.h>
-#include <linux/memblock.h>
 #include <linux/memory.h>
 #include <asm/page.h>
 #include <asm/sizes.h>
-#include <mach/clock.h>
-#include <mach/hardware.h>
 
-#include <mach/mxc_vpu.h>
+#include "mxc_vpu.h"
+#include "iram_alloc.h"
 
 /* Define one new pgprot which combined uncached and XN(never executable) */
 #define pgprot_noncachedxn(prot) \
@@ -76,7 +76,7 @@ struct iram_setting {
 static LIST_HEAD(head);
 
 static int vpu_major;
-static int vpu_clk_usercount;
+//static int vpu_clk_usercount;
 static struct class *vpu_class;
 static struct vpu_priv vpu_data;
 static u8 open_count;
@@ -90,8 +90,9 @@ static struct vpu_mem_desc vshare_mem = { 0 };
 static void __iomem *vpu_base;
 static int vpu_ipi_irq;
 static u32 phy_vpu_base_addr;
-static phys_addr_t top_address_DRAM;
+//static phys_addr_t top_address_DRAM;
 static struct mxc_vpu_platform_data *vpu_plat;
+static struct mxc_vpu_platform_data g_vpu_plat;
 
 /* IRAM setting */
 static struct iram_setting iram;
@@ -113,6 +114,26 @@ static unsigned int regBk[64];
 
 #define	READ_REG(x)		__raw_readl(vpu_base + x)
 #define	WRITE_REG(val, x)	__raw_writel(val, vpu_base + x)
+
+static void mx6q_vpu_reset(void)
+{
+	u32 reg;
+	void *src_base;
+
+	src_base = __arm_ioremap((((0x02000000 + 0x80000) + 0x58000)), (((1UL) << 12)), 0);
+
+	reg = ((void)0, *(volatile unsigned int *)(src_base + 0x18));
+	reg |= 0x02;
+	((void)0, *(volatile unsigned int *)(src_base + 0x18) = (reg));
+
+	reg = ((void)0, *(volatile unsigned int *)(src_base));
+	reg |= 0x5;
+	((void)0, *(volatile unsigned int *)(src_base) = (reg));
+	while (((void)0, *(volatile unsigned int *)(src_base)) & 0x04)
+		;
+	iounmap(src_base);
+}
+
 
 /*!
  * Private function to alloc dma buffer
@@ -230,12 +251,12 @@ static irqreturn_t vpu_jpu_irq_handler(int irq, void *dev_id)
  *
  * @return true return is a valid phy memory address, false return not.
  */
-bool vpu_is_valid_phy_memory(u32 paddr)
+bool valid_phy_memory(u32 paddr)
 {
-	if (paddr > top_address_DRAM)
-		return false;
-
-	return true;
+//	if (paddr > top_address_DRAM)
+//		return false;
+//
+	return 1;
 }
 
 /*!
@@ -498,7 +519,7 @@ static long vpu_ioctl(struct file *filp, u_int cmd,
 			ret = -EFAULT;
 			break;
 		}
-		ret = vpu_is_valid_phy_memory((u32)check_memory.phy_addr);
+		ret = valid_phy_memory((u32)check_memory.phy_addr);
 
 		pr_debug("vpu: memory phy:0x%x %s phy memory\n",
 		       check_memory.phy_addr, (ret ? "is" : "isn't"));
@@ -562,7 +583,7 @@ static int vpu_map_hwregs(struct file *fp, struct vm_area_struct *vm)
 {
 	unsigned long pfn;
 
-	vm->vm_flags |= VM_IO | VM_RESERVED;
+	vm->vm_flags |= VM_IO;
 	/*
 	 * Since vpu registers have been mapped with ioremap() at probe
 	 * which L_PTE_XN is 1, and the same physical address must be
@@ -590,7 +611,7 @@ static int vpu_map_dma_mem(struct file *fp, struct vm_area_struct *vm)
 		 (unsigned int)(vm->vm_start), (unsigned int)(vm->vm_pgoff),
 		 request_size);
 
-	vm->vm_flags |= VM_IO | VM_RESERVED;
+	vm->vm_flags |= VM_IO;
 	vm->vm_page_prot = pgprot_writecombine(vm->vm_page_prot);
 
 	return remap_pfn_range(vm, vm->vm_start, vm->vm_pgoff,
@@ -649,8 +670,14 @@ static int vpu_dev_probe(struct platform_device *pdev)
 	struct device *temp_class;
 	struct resource *res;
 	unsigned long addr = 0;
+	struct device_node *np = pdev->dev.of_node;
 
-	vpu_plat = pdev->dev.platform_data;
+	vpu_plat = &g_vpu_plat;
+
+	if (!of_property_read_u32(np, "iram_size", &vpu_plat->iram_size))
+		vpu_plat->iram_enable = 1;
+
+	vpu_plat->reset = mx6q_vpu_reset;
 
 	if (vpu_plat && vpu_plat->iram_enable && vpu_plat->iram_size)
 		iram_alloc(vpu_plat->iram_size, &addr);
@@ -689,7 +716,7 @@ static int vpu_dev_probe(struct platform_device *pdev)
 		goto err_out_class;
 	}
 
-	vpu_clk = clk_get(&pdev->dev, "vpu_clk");
+	vpu_clk = devm_clk_get(&pdev->dev, "vpu_clk");
 	if (IS_ERR(vpu_clk)) {
 		err = -ENOENT;
 		goto err_out_class;
@@ -776,9 +803,9 @@ static int vpu_suspend(struct platform_device *pdev, pm_message_t state)
 	}
 
 	/* Make sure clock is disabled before suspend */
-	vpu_clk_usercount = clk_get_usecount(vpu_clk);
-	for (i = 0; i < vpu_clk_usercount; i++)
-		clk_disable(vpu_clk);
+//	vpu_clk_usercount = clk_get_usecount(vpu_clk);
+//	for (i = 0; i < vpu_clk_usercount; i++)
+//		clk_disable(vpu_clk);
 
 	if (cpu_is_mx53())
 		return 0;
@@ -867,8 +894,8 @@ static int vpu_resume(struct platform_device *pdev)
 
 recover_clk:
 	/* Recover vpu clock */
-	for (i = 0; i < vpu_clk_usercount; i++)
-		clk_enable(vpu_clk);
+//	for (i = 0; i < vpu_clk_usercount; i++)
+//		clk_enable(vpu_clk);
 
 	return 0;
 }
@@ -877,13 +904,20 @@ recover_clk:
 #define	vpu_resume	NULL
 #endif				/* !CONFIG_PM */
 
+static const struct of_device_id imx_vpu_of_match[] = {
+	{ .compatible = "fsl,imx6q-vpu", },
+	{},
+};
+MODULE_DEVICE_TABLE(of, imx_vpu_of_match);
+
 /*! Driver definition
  *
  */
 static struct platform_driver mxcvpu_driver = {
 	.driver = {
-		   .name = "mxc_vpu",
-		   },
+		.name = "mxc_vpu",
+		.of_match_table = of_match_ptr(imx_vpu_of_match),
+	},
 	.probe = vpu_dev_probe,
 	.remove = vpu_dev_remove,
 	.suspend = vpu_suspend,
@@ -896,9 +930,7 @@ static int __init vpu_init(void)
 
 	init_waitqueue_head(&vpu_queue);
 
-
-	memblock_analyze();
-	top_address_DRAM = memblock_end_of_DRAM_with_reserved();
+	//top_address_DRAM = memblock_end_of_DRAM_with_reserved();
 
 	return ret;
 }
@@ -915,8 +947,6 @@ static void __exit vpu_exit(void)
 	vpu_free_dma_buffer(&bitwork_mem);
 	vpu_free_dma_buffer(&pic_para_mem);
 	vpu_free_dma_buffer(&user_data_mem);
-
-	clk_put(vpu_clk);
 
 	platform_driver_unregister(&mxcvpu_driver);
 	return;
