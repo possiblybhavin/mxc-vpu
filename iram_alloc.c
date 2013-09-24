@@ -21,12 +21,32 @@
 #include <linux/kernel.h>
 #include <linux/io.h>
 #include <linux/module.h>
+#include <linux/of.h>
 #include <linux/spinlock.h>
 #include <linux/genalloc.h>
+#include <linux/version.h>
 #include "iram_alloc.h"
 
 #define MX6Q_IRAM_BASE_ADDR 0x00900000
 #define MX6Q_IRAM_SIZE (0x00040000 - 0x00001000)
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 5, 0)
+/* redirect to static functions */
+static int cpu_is_imx6dl(void)
+{
+	int ret;
+	ret = of_machine_is_compatible("fsl,imx6dl");
+	return ret;
+}
+
+static int cpu_is_imx6q(void)
+{
+	int ret;
+	ret = of_machine_is_compatible("fsl,imx6q");
+	return ret;
+}
+#endif
+
 
 static unsigned long iram_phys_base;
 static void __iomem *iram_virt_base;
@@ -78,8 +98,7 @@ static int __init iram_init_internal(unsigned long base, unsigned long size)
 
 int iram_init(void)
 {
-//	if (cpu_is_imx6q() || cpu_is_imx6dl()) {
-	if (1)
+	if (cpu_is_imx6q() || cpu_is_imx6dl())
 		return iram_init_internal(MX6Q_IRAM_BASE_ADDR, MX6Q_IRAM_SIZE);
 	else
 		return -ENOMEM;

@@ -1442,7 +1442,7 @@ static const struct dev_pm_ops vpu_pm_ops = {
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 5, 0)
 static const struct of_device_id vpu_of_match[] = {
-	{ .compatible = "fsl,imx6-vpu", },
+	{ .compatible = "fsl,imx6q-vpu", },
 	{/* sentinel */}
 };
 MODULE_DEVICE_TABLE(of, vpu_of_match);
