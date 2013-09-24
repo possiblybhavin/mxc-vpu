@@ -58,6 +58,7 @@ struct vpu_mem_desc {
 #define VPU_IOC_QUERY_BITWORK_MEM  _IO(VPU_IOC_MAGIC, 13)
 #define VPU_IOC_SET_BITWORK_MEM    _IO(VPU_IOC_MAGIC, 14)
 #define VPU_IOC_PHYMEM_CHECK    _IO(VPU_IOC_MAGIC, 15)
+#define VPU_IOC_LOCK_DEV        _IO(VPU_IOC_MAGIC, 16)
 
 #define BIT_CODE_RUN                    0x000
 #define BIT_CODE_DOWN                   0x004
@@ -67,6 +68,7 @@ struct vpu_mem_desc {
 #define BIT_INT_REASON                  0x174
 
 #define MJPEG_PIC_STATUS_REG            0x3004
+#define MBC_SET_SUBBLK_EN               0x4A0
 
 #define BIT_WORK_CTRL_BUF_BASE          0x100
 #define BIT_WORK_CTRL_BUF_REG(i)        (BIT_WORK_CTRL_BUF_BASE + i * 4)
@@ -83,6 +85,9 @@ struct vpu_mem_desc {
 #define BIT_RD_PTR_BASE                 0x120
 #define BIT_RD_PTR_REG(i)               (BIT_RD_PTR_BASE + i * 8)
 #define BIT_WR_PTR_REG(i)               (BIT_RD_PTR_BASE + i * 8 + 4)
+
+#define cpu_is_mx51()			0
+#define cpu_is_mx53() 			0
 
 /* i could be 0, 1, 2, 3 */
 #define BIT_FRM_DIS_FLG_BASE            (cpu_is_mx51() ? 0x150 : 0x140)
@@ -109,6 +114,5 @@ void vl2cc_flush(void);
 void vl2cc_disable(void);
 void vl2cc_cleanup(void);
 
-#define cpu_is_mx53() 0
 
 #endif
